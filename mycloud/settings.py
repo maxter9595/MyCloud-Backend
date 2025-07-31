@@ -58,7 +58,7 @@ MIDDLEWARE = [
 ]
 
 # ======================
-# 5. DB
+# 5. Databases
 # ======================
 DATABASES = {
     'default': {
