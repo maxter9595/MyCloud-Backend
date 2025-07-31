@@ -1,6 +1,7 @@
 import os
-import environ
 from pathlib import Path
+
+import environ
 
 # ======================
 # 1. Initial Setup
@@ -57,7 +58,7 @@ MIDDLEWARE = [
 ]
 
 # ======================
-# 5. DB
+# 5. Database
 # ======================
 DATABASES = {
     'default': {
