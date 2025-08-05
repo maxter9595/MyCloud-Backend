@@ -11,7 +11,7 @@ def main():
     provided arguments. Raises an ImportError if Django is not installed
     or not available in the environment.
     """
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mycloud.settings')
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mycloud.settings.local')
 
     try:
         from django.core.management import execute_from_command_line

@@ -4,22 +4,38 @@ from pathlib import Path
 import environ
 
 # ======================
-# 1. Initial Setup
+# 1. Настройка окружения
 # ======================
-env = environ.Env(DEBUG=(bool, True))
-BASE_DIR = Path(__file__).resolve().parent.parent
-environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+env = environ.Env(
+    # Указываем типы и значения по умолчанию
+    DEBUG=(bool, False),
+    SECRET_KEY=(str, 'dummy-key-for-dev-only!change-me!'),
+    ALLOWED_HOSTS=(list, ['127.0.0.1', 'localhost']),
+    DB_NAME=(str, 'postgres'),
+    DB_USER=(str, 'postgres'),
+    DB_PASSWORD=(str, 'postgres'),
+    DB_HOST=(str, 'localhost'),
+    DB_PORT=(int, 5432),
+    CORS_ALLOWED_ORIGINS=(list, ['http://localhost:3000']),
+)
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Читаем .env файл с явным указанием пути
+env.read_env(os.path.join(BASE_DIR, '.env'), overwrite=True)
 
 # ======================
-# 2. Core Configuration
+# 2. Основные настройки
 # ======================
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
+
 ROOT_URLCONF = 'mycloud.urls'
 WSGI_APPLICATION = 'mycloud.wsgi.application'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'accounts.CustomUser'
+
 
 # ======================
 # 3. Installed Apps
@@ -109,6 +125,7 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # ======================
