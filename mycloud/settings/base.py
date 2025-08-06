@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
+    'django_celery_beat',
 
     # Local Apps
     'apps.accounts',
@@ -203,3 +204,16 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
 DEFAULT_USER_BYTES = 5368709120  # 5GB
 MIN_USER_BYTES = 1048576  # 1MB
 MAX_ADMIN_BYTES = 10737418240  # 10GB
+
+# ======================
+# 14. Celery settings
+# ======================
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_TIMEZONE = 'Europe/Moscow'
+CELERY_BEAT_SCHEDULE_FILENAME = os.path.join(BASE_DIR, 'celerybeat-schedule')
+
+CELERY_IMPORTS = ('apps.storage.tasks',)
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_TASK_CREATE_MISSING_QUEUES = True
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'

@@ -1,8 +1,10 @@
 import os
 import uuid
 
-from apps.accounts.models import CustomUser
 from django.db import models
+from django.utils import timezone
+
+from apps.accounts.models import CustomUser
 
 
 def user_directory_path(instance, filename):
@@ -50,6 +52,11 @@ class UserFile(models.Model):
         default=uuid.uuid4,
         unique=True
     )
+    shared_expiry = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Link expiration date and time"
+    )
 
     def save(self, *args, **kwargs):
         """
@@ -77,6 +84,28 @@ class UserFile(models.Model):
             self.original_name = os.path.basename(file.name)
 
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """
+        Delete the file from storage 
+        and then delete the model instance.
+        """
+        try:
+            if self.file:
+                storage, path = self.file.storage, self.file.path
+                storage.delete(path)
+        except Exception as e:
+            print(e)
+        finally:
+            super().delete(*args, **kwargs)
+
+    def is_shared_link_expired(self):
+        """
+        Check if the shared link has expired.
+        """
+        if not self.shared_expiry:
+            return False
+        return timezone.now() > self.shared_expiry
 
     def __str__(self):
         """

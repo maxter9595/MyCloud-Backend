@@ -1,16 +1,18 @@
-from django.utils import timezone
+from datetime import timedelta
+
+from django.core.exceptions import PermissionDenied
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
-from django.core.exceptions import PermissionDenied
-
-from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser
+from django.utils import timezone
 from rest_framework import generics, permissions, status
+from rest_framework.parsers import MultiPartParser
+from rest_framework.response import Response
+
+from apps.accounts.models import CustomUser
 
 from .models import UserFile
-from .serializers import FileSerializer
-from apps.accounts.models import CustomUser
 from .renderers.binary_file import BinaryFileRenderer
+from .serializers import FileSerializer, FileShareSerializer
 
 
 class FileListView(generics.ListCreateAPIView):
@@ -213,6 +215,12 @@ class SharedFileDownloadView(generics.GenericAPIView):
                 shared_link=shared_link
             )
 
+            if user_file.is_shared_link_expired():
+                return Response(
+                    {"detail": "Срок действия ссылки истек"},
+                    status=status.HTTP_410_GONE
+                )
+
             user_file.last_download = timezone.now()
             user_file.save()
 
@@ -234,3 +242,40 @@ class SharedFileDownloadView(generics.GenericAPIView):
                 {"detail": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class FileShareView(generics.UpdateAPIView):
+    serializer_class = FileShareSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return UserFile.objects.filter(user=user)
+
+    def patch(self, request, *args, **kwargs):
+        """
+        Creates or updates 
+        a shared link for a file
+        """
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        if 'expiry_days' not in request.data:
+            instance.shared_expiry = None
+        
+        instance.shared_link = uuid.uuid4()
+        instance.save()
+        
+        return Response(serializer.data)
+
+    def delete(self, request, *args, **kwargs):
+        """
+        Deletes the shared 
+        link from the file
+        """
+        instance = self.get_object()
+        instance.shared_link = None
+        instance.shared_expiry = None
+        instance.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)

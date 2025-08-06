@@ -4,6 +4,7 @@ from .views import (
     FileDetailView,
     FileDownloadView,
     FileListView,
+    FileShareView,
     SharedFileDownloadView,
 )
 
@@ -22,6 +23,11 @@ urlpatterns = [
         'files/<int:pk>/download/',
         FileDownloadView.as_view(),
         name='file-download'
+    ),
+    path(
+        'files/<int:pk>/share/',
+        FileShareView.as_view(),
+        name='file-share'
     ),
     path(
         'shared/<uuid:shared_link>/',
