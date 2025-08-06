@@ -1,7 +1,8 @@
-from django.db import models
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
+from django.core.cache import cache
 from django.core.validators import MinValueValidator, RegexValidator
+from django.db import models
 
 
 class CustomUser(AbstractUser):
@@ -33,25 +34,28 @@ class CustomUser(AbstractUser):
         help_text="Maximum storage capacity in bytes"
     )
 
+    def get_storage_usage(self):
+        """
+        Calculate the total storage usage for the user with caching
+        """
+        cache_key = f'user_{self.id}_storage_usage'
+        usage = cache.get(cache_key)
+        
+        if usage is None:
+            from apps.storage.models import UserFile
+            try:
+                usage = sum(
+                    file.size for file in
+                    UserFile.objects.filter(user=self).only('size')
+                )
+                # Кешируем на 5 минут
+                cache.set(cache_key, usage, timeout=300)
+            except Exception:
+                usage = 0
+                
+        return usage
+
     def save(self, *args, **kwargs):
-        """
-        Save the user model to the database.
-
-        If the user is created for the first time, check if the user is
-        named 'admin' or is a superuser. If yes, set the user as a staff
-        and superuser, and set the maximum storage to the maximum value
-        for admins.
-
-        If the `storage_path` is not set, set it to
-        `user_<user_id>_storage` and save the model again with only the
-        `storage_path` field updated.
-
-        :param args: Additional positional arguments to pass to the
-            `save()` method.
-        :param kwargs: Additional keyword arguments to pass to the
-            `save()` method.
-        :return: None
-        """
         if not self.pk:
             is_superuser = (
                 hasattr(self, 'is_superuser')
@@ -65,26 +69,9 @@ class CustomUser(AbstractUser):
         if not self.storage_path:
             self.storage_path = f'user_{self.id}_storage'
             super().save(update_fields=['storage_path'])
-
-    def get_storage_usage(self):
-        """
-        Calculate the total storage usage for the user.
-
-        This method queries the UserFile model to calculate
-        the sum of the sizes of all files associated with
-        the user. If an error occurs during the query,
-        it returns 0.
-
-        :return: The total storage usage in bytes.
-        """
-        from apps.storage.models import UserFile
-        try:
-            return sum(
-                file.size for file in
-                UserFile.objects.filter(user=self)
-            )
-        except Exception:
-            return 0
+        
+        # Инвалидируем кеш использования хранилища
+        cache.delete(f'user_{self.id}_storage_usage')
 
     def get_storage_usage_percent(self):
         """

@@ -25,3 +25,5 @@ django-celery-beat==2.5.0
 # Для работы Celery в Windows
 gevent==23.9.1
 
+# Кеширование
+django-redis==5.3.0

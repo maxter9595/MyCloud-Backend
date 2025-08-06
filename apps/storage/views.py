@@ -1,14 +1,19 @@
+import uuid
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
+from django.db.models import Prefetch
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, serializers, status
+from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from apps.accounts.models import CustomUser
+from mycloud.settings.base import CACHE_TTL
 
 from .models import UserFile
 from .renderers.binary_file import BinaryFileRenderer
@@ -20,40 +25,57 @@ class FileListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser]
 
+    def get_cache_key(self):
+        user = self.request.user
+        user_id = user.id
+        if user.is_superuser and 'user_id' in self.request.query_params:
+            user_id = self.request.query_params['user_id']
+        return f'user_files_{user_id}'
+
     def get_queryset(self):
         """
-        Returns a queryset of UserFile objects, either
-        for the current user (if not a superuser) or
-        for the user specified in the user_id query
-        parameter (if a superuser).
-
-        :return: UserFile queryset
+        Returns a queryset of UserFile objects with caching and optimized queries
         """
-        user = self.request.user
+        cache_key = self.get_cache_key()
+        queryset = cache.get(cache_key)
+        
+        if queryset is None:
+            user = self.request.user
 
-        if user.is_superuser and 'user_id' in self.request.query_params:
-            target_user = get_object_or_404(
-                CustomUser,
-                id=self.request.query_params['user_id']
+            if user.is_superuser and 'user_id' in self.request.query_params:
+                target_user = get_object_or_404(
+                    CustomUser,
+                    id=self.request.query_params['user_id']
+                )
+                queryset = UserFile.objects.filter(user=target_user)
+            else:
+                queryset = UserFile.objects.filter(user=user)
+
+            # Оптимизация запросов
+            queryset = queryset.select_related('user').only(
+                'id',
+                'original_name',
+                'size',
+                'upload_date',
+                'last_download',
+                'comment',
+                'shared_link',
+                'shared_expiry',
+                'user__username'
             )
-            return UserFile.objects.filter(user=target_user)
+            
+            # Кешируем на 1 час
+            cache.set(cache_key, queryset, timeout=CACHE_TTL)
 
-        return UserFile.objects.filter(user=user)
+        return queryset
 
     def perform_create(self, serializer):
         """
-        Customize the creation of a new UserFile object to
-        enforce storage size limits and set the original_name
-        and size fields.
-
-        :param serializer: The UserFile serializer instance
-        :return: The created UserFile object
+        Customize the creation of a new UserFile object and invalidate cache
         """
         file_obj = self.request.FILES.get('file')
         if not file_obj:
-            raise ValueError(
-                "No file was uploaded"
-            )
+            raise ValueError("No file was uploaded")
 
         user = self.request.user
         if not user.has_storage_space(file_obj.size):
@@ -71,6 +93,17 @@ class FileListView(generics.ListCreateAPIView):
         )
         instance.file.save(file_obj.name, file_obj)
         instance.save()
+        
+        # Инвалидируем кеш
+        cache.delete(self.get_cache_key())
+
+    @action(detail=False, methods=['post'])
+    def clear_cache(self, request):
+        """
+        Clear cache for current user's files
+        """
+        cache.delete(self.get_cache_key())
+        return Response({'status': 'cache cleared'}, status=status.HTTP_200_OK)
 
 
 class FileDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -79,16 +112,7 @@ class FileDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         """
-        Retrieve a queryset of UserFile objects
-        based on the user's permissions.
-
-        If the request is made by a superuser and
-        includes a user_id query parameter, return
-        the UserFile objects associated with the
-        specified user. Otherwise, return the UserFile
-        objects associated with the requesting user.
-
-        :return: Queryset of UserFile objects
+        Retrieve a queryset of UserFile objects with optimized queries
         """
         user = self.request.user
 
@@ -97,27 +121,39 @@ class FileDetailView(generics.RetrieveUpdateDestroyAPIView):
                 CustomUser,
                 id=self.request.query_params['user_id']
             )
-            return UserFile.objects.filter(user=target_user)
+            queryset = UserFile.objects.filter(user=target_user)
+        else:
+            queryset = UserFile.objects.filter(user=user)
 
-        return UserFile.objects.filter(user=user)
+        return queryset.select_related('user').only(
+            'id',
+            'original_name',
+            'size',
+            'upload_date',
+            'last_download',
+            'comment',
+            'shared_link',
+            'shared_expiry',
+            'user__username',
+            'file'
+        )
 
     def perform_update(self, serializer):
-        """
-        Update the UserFile instance with new data.
-
-        This method saves the updated instance data from
-        the serializer and resets the last_download
-        attribute to None, indicating that the file has
-        not been downloaded since the update. It then
-        saves the changes to the database.
-
-        :param serializer: The serializer instance containing
-        the validated data for updating the UserFile.
-        :return: None
-        """
         instance = serializer.save()
         instance.last_download = None
         instance.save()
+        
+        # Инвалидируем кеш списка файлов
+        cache_key = f'user_files_{instance.user.id}'
+        cache.delete(cache_key)
+
+    def perform_destroy(self, instance):
+        user_id = instance.user.id
+        instance.delete()
+        
+        # Инвалидируем кеш списка файлов
+        cache_key = f'user_files_{user_id}'
+        cache.delete(cache_key)
 
 
 class FileDownloadView(generics.GenericAPIView):
@@ -127,28 +163,12 @@ class FileDownloadView(generics.GenericAPIView):
     def get(self, request, pk):
         """
         Return a file response for the specified UserFile object.
-
-        This method checks if the requesting user is either the owner
-        of the file or a superuser. If the user has the necessary
-        permissions, it updates the last_download attribute of the
-        UserFile instance with the current time, and then saves the
-        changes to the database.
-
-        If the file does not exist or if the user does not have
-        the necessary permissions, it raises the appropriate
-        exception.
-
-        :param request: The HTTP request object
-        :param pk: The primary key of the UserFile object
-        :return: A file response with the file contents
         """
         try:
             user_file = self.get_object(pk)
 
             if not user_file.file:
-                raise Http404(
-                    "File not found"
-                )
+                raise Http404("File not found")
 
             is_user = (user_file.user == request.user)
             if not is_user and not request.user.is_superuser:
@@ -180,11 +200,6 @@ class FileDownloadView(generics.GenericAPIView):
     def get_object(self, pk):
         """
         Returns the UserFile object with the given primary key.
-        Raises PermissionDenied if the requesting user is not 
-        the owner of the file and not a superuser.
-
-        :param pk: The primary key of the UserFile object
-        :return: The UserFile object
         """
         file = get_object_or_404(UserFile, pk=pk)
 
@@ -202,12 +217,7 @@ class SharedFileDownloadView(generics.GenericAPIView):
 
     def get(self, request, shared_link):
         """
-        Handle GET requests to download
-        a file from a shared link.
-
-        :param request: The GET request
-        :param shared_link: The shared link of the file to download
-        :return: A streaming HTTP response containing the file
+        Handle GET requests to download a file from a shared link.
         """
         try:
             user_file = get_object_or_404(
@@ -225,9 +235,7 @@ class SharedFileDownloadView(generics.GenericAPIView):
             user_file.save()
 
             if not user_file.file:
-                raise Http404(
-                    "File not found on server"
-                )
+                raise Http404("File not found on server")
 
             response = FileResponse(
                 user_file.file,
@@ -249,13 +257,15 @@ class FileShareView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        """
+        Оптимизированный запрос с select_related для пользователя
+        """
         user = self.request.user
-        return UserFile.objects.filter(user=user)
+        return UserFile.objects.filter(user=user).select_related('user')
 
     def patch(self, request, *args, **kwargs):
         """
-        Creates or updates 
-        a shared link for a file
+        Creates or updates a shared link for a file
         """
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data)
@@ -267,15 +277,25 @@ class FileShareView(generics.UpdateAPIView):
         instance.shared_link = uuid.uuid4()
         instance.save()
         
+        # Инвалидируем кеш списка файлов
+        cache_key = f'user_files_{instance.user.id}'
+        cache.delete(cache_key)
+        
         return Response(serializer.data)
 
     def delete(self, request, *args, **kwargs):
         """
-        Deletes the shared 
-        link from the file
+        Deletes the shared link from the file
         """
         instance = self.get_object()
+        user_id = instance.user.id
+        
         instance.shared_link = None
         instance.shared_expiry = None
         instance.save()
+        
+        # Инвалидируем кеш списка файлов
+        cache_key = f'user_files_{user_id}'
+        cache.delete(cache_key)
+        
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'corsheaders',
     'django_celery_beat',
+    'django_redis',
 
     # Local Apps
     'apps.accounts',
@@ -217,3 +218,22 @@ CELERY_IMPORTS = ('apps.storage.tasks',)
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_CREATE_MISSING_QUEUES = True
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# ======================
+# 15. Cache settings
+# ======================
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://localhost:6379/1",  # Используем другую БД Redis
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 5,  # seconds
+            "SOCKET_TIMEOUT": 5,  # seconds
+        },
+        "KEY_PREFIX": "mycloud"
+    }
+}
+
+# Время жизни кеша по умолчанию (1 час)
+CACHE_TTL = 60 * 60
