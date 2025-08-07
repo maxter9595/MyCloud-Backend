@@ -10,6 +10,8 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.accounts.throttling import LoginThrottle, RegisterThrottle
+
 from .models import CustomUser
 from .serializers import (
     AdminCreateSerializer,
@@ -20,6 +22,7 @@ from .serializers import (
 
 
 class RegisterView(generics.CreateAPIView):
+    throttle_classes = [RegisterThrottle]
     queryset = CustomUser.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.AllowAny]
@@ -56,6 +59,7 @@ class RegisterView(generics.CreateAPIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class LoginView(GenericAPIView):
+    throttle_classes = [LoginThrottle]
     serializer_class = LoginSerializer
     permission_classes = [permissions.AllowAny]
 

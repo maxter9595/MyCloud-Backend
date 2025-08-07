@@ -1,9 +1,11 @@
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 
 from apps.accounts.models import CustomUser
 from apps.storage.models import UserFile
+
+from ..throttling import RegisterThrottle
 
 
 class CustomUserModelTest(TestCase):
@@ -93,3 +95,17 @@ class CustomUserModelTest(TestCase):
         )
         self.assertTrue(admin.is_staff)
         self.assertTrue(admin.is_superuser)
+
+
+class ThrottlingTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.throttle = RegisterThrottle()
+
+    def test_register_throttle(self):
+        request = self.factory.post('/api/auth/register/')
+        for _ in range(5):
+            self.assertTrue(self.throttle.allow_request(request, None))
+        
+        # 6-я попытка должна быть отклонена
+        self.assertFalse(self.throttle.allow_request(request, None))
