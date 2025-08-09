@@ -7,6 +7,8 @@ from .views import (
     RegisterView,
     UserDetailView,
     UserListView,
+    check_email,
+    check_username,
     current_user,
     get_csrf_token,
 )
@@ -51,5 +53,15 @@ urlpatterns = [
         'csrf/',
         get_csrf_token,
         name='csrf'
+    ),
+    path(
+        'check-username/',
+        check_username,
+        name='check-username'
+    ),
+    path(
+        'check-email/',
+        check_email,
+        name='check-email'
     ),
 ]

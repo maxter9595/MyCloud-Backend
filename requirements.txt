@@ -33,3 +33,6 @@ pytest==8.2.0
 pytest-django==4.8.0
 factory-boy==3.3.0
 freezegun==1.4.0
+
+# Для развертывания
+gunicorn==21.2.0

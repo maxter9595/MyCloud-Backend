@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
+from django.db.models import Q
+from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -232,3 +234,15 @@ def current_user(request):
         'max_storage': user.max_storage,
         'storage_usage_percent': storage_usage_percent
     })
+
+@api_view(['GET'])
+def check_username(request):
+    username = request.GET.get('username', '')
+    exists = CustomUser.objects.filter(username__iexact=username).exists()
+    return JsonResponse({'available': not exists})
+
+@api_view(['GET'])
+def check_email(request):
+    email = request.GET.get('email', '')
+    exists = CustomUser.objects.filter(email__iexact=email).exists()
+    return JsonResponse({'available': not exists})
