@@ -59,7 +59,7 @@ class RegisterView(generics.CreateAPIView):
         )
 
 
-@method_decorator(csrf_exempt, name='dispatch')
+# @method_decorator(csrf_exempt, name='dispatch')
 class LoginView(GenericAPIView):
     throttle_classes = [LoginThrottle]
     serializer_class = LoginSerializer
@@ -188,12 +188,13 @@ class AdminCreateView(generics.CreateAPIView):
         :param serializer: The serializer instance used to
         validate and save the new user data.
         """
-        serializer.save(
+        user = serializer.save(
             is_superuser=True,
             is_staff=True,
             max_storage=settings.MAX_ADMIN_BYTES
         )
-
+        user.set_password(serializer.validated_data['password'])
+        user.save()
 
 @api_view(['GET'])
 def get_csrf_token(request):
