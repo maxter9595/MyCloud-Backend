@@ -1,23 +1,21 @@
-# Базовый образ
+# backend/Dockerfile
 FROM python:3.11-slim
 
-# Установка зависимостей
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
 
-# Рабочая директория
 WORKDIR /app
 
-# Копирование зависимостей
+# Устанавливаем зависимости
 COPY requirements.txt .
-
-# Установка Python зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копирование проекта
 COPY . .
 
-# Команда запуска
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "mycloud.wsgi:application"]
+# Устанавливаем entrypoint (простой, без миграций)
+COPY ./entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["gunicorn", "mycloud.wsgi:application", "--bind", "0.0.0.0:8000"]
