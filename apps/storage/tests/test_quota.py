@@ -1,8 +1,8 @@
-from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
-
 from apps.accounts.models import CustomUser
 from apps.storage.models import UserFile
+from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase
 
 
 class StorageQuotaTest(TestCase):
@@ -35,18 +35,23 @@ class StorageQuotaTest(TestCase):
             size=file_5mb.size
         )
         
+        # Инвалидируем кеш, чтобы пересчитать использование
+        cache.delete(f'user_{self.user.id}_storage_usage')
+
         # Проверяем, что теперь нельзя загрузить еще 6MB
         file_6mb = SimpleUploadedFile(
             '6mb.txt',
             b'x' * 6 * 1024 * 1024,
             content_type='text/plain'
         )
-        self.assertFalse(self.user.has_storage_space(file_6mb.size))
-        
+        can_store_6mb = self.user.has_storage_space(file_6mb.size)
+        self.assertFalse(can_store_6mb)
+
         # Но можно загрузить 4.9MB
         file_4_9mb = SimpleUploadedFile(
             '4.9mb.txt',
             b'x' * int(4.9 * 1024 * 1024),
             content_type='text/plain'
         )
-        self.assertTrue(self.user.has_storage_space(file_4_9mb.size))
+        can_store_4_9mb = self.user.has_storage_space(file_4_9mb.size)
+        self.assertTrue(can_store_4_9mb)
